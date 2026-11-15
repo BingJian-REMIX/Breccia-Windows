@@ -1,46 +1,41 @@
+using System.Diagnostics;
 using System.IO;
-using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using PeNet;
+using Microsoft.Win32;
 
 namespace Breccia.WPF;
 
 public partial class MainWindow : Window
 {
-    private static readonly SolidColorBrush Fg = B("#E9EDF5");
+    private static readonly SolidColorBrush[] ToneBrushes =
+    {
+        B("#E9EDF5"), // Normal
+        B("#4F8CFF"), // Accent
+        B("#EF4444"), // Danger
+        B("#F59E0B"), // Warn
+        B("#3DDC97"), // Safe
+        B("#7C879E")  // Muted
+    };
+
     private static readonly SolidColorBrush Accent = B("#4F8CFF");
-    private static readonly SolidColorBrush Danger = B("#EF4444");
-    private static readonly SolidColorBrush Muted = B("#7C879E");
-    private static readonly SolidColorBrush Safe = B("#3DDC97");
     private static readonly SolidColorBrush IdleBorder = B("#243049");
     private static readonly SolidColorBrush IdleBg = B("#0C1220");
     private static readonly SolidColorBrush ActiveBg = B("#111A2E");
 
-    private static readonly string[] PackerMarkers =
-        { "UPX0", "UPX1", ".VMP", ".ASPACK", ".THEMIDA", ".NSP" };
-
-    private static readonly HashSet<string> SensitiveApis = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "CreateRemoteThread", "CreateRemoteThreadEx",
-        "VirtualAllocEx", "VirtualAllocExNuma",
-        "WriteProcessMemory", "NtWriteVirtualMemory", "ZwWriteVirtualMemory",
-        "NtCreateThreadEx", "RtlCreateUserThread",
-        "QueueUserAPC", "NtQueueApcThread",
-        "SetThreadContext", "NtSetContextThread",
-        "NtUnmapViewOfSection", "ZwUnmapViewOfSection"
-    };
-
+    private AnalysisReport? _report;
     private bool _hover;
     private bool _dragOver;
 
     public MainWindow()
     {
         InitializeComponent();
-        ReportTree.Items.Add(Node("// AWAITING FILE ...", Muted));
-        ReportMeta.Text = "no file loaded";
+        RenderReport();
     }
 
     private static SolidColorBrush B(string hex)
@@ -50,24 +45,247 @@ public partial class MainWindow : Window
         return brush;
     }
 
-    private static TreeViewItem Node(string text, Brush? color = null, bool bold = false)
+    private static SolidColorBrush ToneBrush(Tone tone) => ToneBrushes[(int)tone];
+
+    public void LoadFile(string path) => Analyze(path);
+
+    // ---- rendering ----
+
+    private static TreeViewItem Render(ReportNode n, bool expandAll)
     {
-        var c = color ?? Fg;
         var header = new TextBlock
         {
-            Text = text,
-            Foreground = c,
+            Text = n.Text,
+            Foreground = ToneBrush(n.Tone),
             FontFamily = new FontFamily("Consolas"),
             FontSize = 12.5,
-            FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal
+            FontWeight = n.Bold ? FontWeights.SemiBold : FontWeights.Normal
         };
-        return new TreeViewItem { Header = header, Foreground = c };
+        var item = new TreeViewItem
+        {
+            Header = header,
+            Foreground = ToneBrush(n.Tone),
+            IsExpanded = expandAll,
+            Tag = n
+        };
+        foreach (var child in n.Children) item.Items.Add(Render(child, expandAll));
+        return item;
     }
 
-    private static bool IsPackerSection(string name) =>
-        PackerMarkers.Any(m => name.StartsWith(m, StringComparison.OrdinalIgnoreCase));
+    private void RenderReport(string? filter = null)
+    {
+        ReportTree.Items.Clear();
+        if (_report is null)
+        {
+            ReportTree.Items.Add(Render(new ReportNode { Text = "// AWAITING FILE ...", Tone = Tone.Muted }, false));
+            FilterCount.Text = "";
+            return;
+        }
 
-    // ---- chrome ----
+        bool searching = !string.IsNullOrWhiteSpace(filter);
+        var nodes = searching ? Filter(_report.Nodes, filter!.Trim()) : _report.Nodes;
+        int index = 0;
+        foreach (var n in nodes)
+        {
+            var item = Render(n, searching);
+            item.IsExpanded = searching || index < 2;
+            ReportTree.Items.Add(item);
+            index++;
+        }
+        FilterCount.Text = searching ? $"{nodes.Sum(Count)} matches" : "";
+    }
+
+    private static List<ReportNode> Filter(List<ReportNode> nodes, string query)
+    {
+        var result = new List<ReportNode>();
+        foreach (var n in nodes)
+        {
+            bool selfMatch = n.Text.Contains(query, StringComparison.OrdinalIgnoreCase);
+            var children = selfMatch ? n.Children : Filter(n.Children, query);
+            if (selfMatch || children.Count > 0)
+                result.Add(new ReportNode
+                {
+                    Text = n.Text, Tone = n.Tone, Bold = n.Bold, Children = children
+                });
+        }
+        return result;
+    }
+
+    private static int Count(ReportNode n) => 1 + n.Children.Sum(Count);
+
+    // ---- analysis ----
+
+    private void Analyze(string path)
+    {
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            _report = PeAnalyzer.Analyze(path);
+            sw.Stop();
+            RenderReport(SearchBox.Text);
+            DropTitle.Text = _report.FileName;
+            DropHint.Text = $"{_report.FileSize:N0} bytes  |  {_report.Architecture}  |  RISK {_report.RiskLevel} ({_report.RiskScore}/100)  |  drop another file to reload";
+            ReportMeta.Text = $"{_report.Nodes.Count} groups  |  {_report.Findings.Count} findings  |  {_report.ImportCount} imports  |  {_report.ExportCount} exports";
+            StatusLeft.Text = _report.FilePath;
+            StatusRight.Text = $"{_report.FileSize:N0} B  |  risk {_report.RiskScore}/100 {_report.RiskLevel}  |  {sw.ElapsedMilliseconds} ms";
+        }
+        catch (Exception ex)
+        {
+            _report = null;
+            ReportTree.Items.Clear();
+            ReportTree.Items.Add(Render(
+                new ReportNode { Text = "PARSE FAILED: " + ex.Message, Tone = Tone.Danger, Bold = true }, false));
+            DropTitle.Text = "PARSE FAILED";
+            DropHint.Text = Path.GetFileName(path) + "  |  drop another file to retry";
+            ReportMeta.Text = "error";
+            StatusLeft.Text = path;
+            StatusRight.Text = "error";
+        }
+    }
+
+    // ---- commands ----
+
+    private void OpenFile()
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "Open PE image",
+            Filter = "PE files (*.exe;*.dll;*.sys;*.drv)|*.exe;*.dll;*.sys;*.drv|All files (*.*)|*.*"
+        };
+        if (dlg.ShowDialog(this) == true) Analyze(dlg.FileName);
+    }
+
+    private void Export(bool json)
+    {
+        if (_report is null)
+        {
+            StatusRight.Text = "nothing to export";
+            return;
+        }
+        var dlg = new SaveFileDialog
+        {
+            Title = "Export analysis report",
+            Filter = json ? "JSON report (*.json)|*.json" : "Text report (*.txt)|*.txt",
+            FileName = $"Breccia_{Path.GetFileNameWithoutExtension(_report.FileName)}_{DateTime.Now:yyyyMMdd_HHmmss}" +
+                       (json ? ".json" : ".txt")
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        string content = json
+            ? JsonSerializer.Serialize(_report, new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Converters = { new JsonStringEnumConverter() }
+            })
+            : ToPlainText(_report);
+        File.WriteAllText(dlg.FileName, content, Encoding.UTF8);
+        StatusRight.Text = "exported -> " + dlg.FileName;
+    }
+
+    private static string ToPlainText(AnalysisReport r)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("BRECCIA // PE STRUCTURE & SECURITY REPORT");
+        sb.AppendLine($"Generated  : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"File       : {r.FilePath}");
+        sb.AppendLine($"Size       : {r.FileSize:N0} bytes");
+        sb.AppendLine($"Type       : {r.ImageType} / {r.Architecture} / {(r.IsDotNet ? ".NET" : "native")}");
+        sb.AppendLine($"CompileTime: {r.CompileTime}");
+        sb.AppendLine($"EntryPoint : {r.EntryPoint}");
+        sb.AppendLine($"SHA256     : {r.Sha256}");
+        sb.AppendLine($"SHA1       : {r.Sha1}");
+        sb.AppendLine($"MD5        : {r.Md5}");
+        sb.AppendLine($"ImpHash    : {r.ImpHash ?? "n/a"}");
+        sb.AppendLine($"Risk       : {r.RiskScore}/100 [{r.RiskLevel}]");
+        sb.AppendLine();
+
+        void Walk(ReportNode n, int depth)
+        {
+            sb.AppendLine(new string(' ', depth * 2) + n.Text);
+            foreach (var c in n.Children) Walk(c, depth + 1);
+        }
+        foreach (var n in r.Nodes) Walk(n, 0);
+        return sb.ToString();
+    }
+
+    private void SetExpanded(bool value)
+    {
+        foreach (var o in ReportTree.Items)
+            if (o is TreeViewItem item) WalkItems(item, value);
+    }
+
+    private static void WalkItems(TreeViewItem item, bool value)
+    {
+        item.IsExpanded = value;
+        foreach (var o in item.Items)
+            if (o is TreeViewItem child) WalkItems(child, value);
+    }
+
+    private void CopySelected(bool subtree)
+    {
+        if (ReportTree.SelectedItem is not TreeViewItem item || item.Tag is not ReportNode node) return;
+        string text = subtree ? Flatten(node) : node.Text;
+        try
+        {
+            Clipboard.SetText(text);
+            StatusRight.Text = subtree ? "copied subtree to clipboard" : "copied node to clipboard";
+        }
+        catch (Exception ex)
+        {
+            StatusRight.Text = "clipboard error: " + ex.Message;
+        }
+    }
+
+    private static string Flatten(ReportNode n)
+    {
+        var sb = new StringBuilder();
+        void Walk(ReportNode x, int depth)
+        {
+            sb.AppendLine(new string(' ', depth * 2) + x.Text);
+            foreach (var c in x.Children) Walk(c, depth + 1);
+        }
+        Walk(n, 0);
+        return sb.ToString();
+    }
+
+    // ---- event handlers ----
+
+    private void Open_Click(object sender, RoutedEventArgs e) => OpenFile();
+    private void ExportJson_Click(object sender, RoutedEventArgs e) => Export(true);
+    private void ExportTxt_Click(object sender, RoutedEventArgs e) => Export(false);
+    private void ExpandAll_Click(object sender, RoutedEventArgs e) => SetExpanded(true);
+    private void CollapseAll_Click(object sender, RoutedEventArgs e) => SetExpanded(false);
+    private void CopyNode_Click(object sender, RoutedEventArgs e) => CopySelected(false);
+    private void CopySubtree_Click(object sender, RoutedEventArgs e) => CopySelected(true);
+    private void DropZone_Click(object sender, MouseButtonEventArgs e) => OpenFile();
+
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        SearchPlaceholder.Visibility = string.IsNullOrEmpty(SearchBox.Text)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        RenderReport(SearchBox.Text);
+    }
+
+    private void Window_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.KeyboardDevice.Modifiers != ModifierKeys.Control) return;
+        switch (e.Key)
+        {
+            case Key.O:
+                OpenFile();
+                e.Handled = true;
+                break;
+            case Key.S:
+                Export(true);
+                e.Handled = true;
+                break;
+            case Key.F:
+                SearchBox.Focus();
+                SearchBox.SelectAll();
+                e.Handled = true;
+                break;
+        }
+    }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -77,8 +295,6 @@ public partial class MainWindow : Window
     private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
-
-    // ---- drop zone ----
 
     private void DropZone_MouseEnter(object sender, MouseEventArgs e)
     {
@@ -128,139 +344,5 @@ public partial class MainWindow : Window
         bool active = _hover || _dragOver;
         DropZone.BorderBrush = active ? Accent : IdleBorder;
         DropZone.Background = active ? ActiveBg : IdleBg;
-    }
-
-    // ---- analysis ----
-
-    private void Analyze(string path)
-    {
-        try
-        {
-            byte[] bytes = File.ReadAllBytes(path);
-            var pe = new PeFile(bytes);
-            var nt = pe.ImageNtHeaders;
-            if (nt is null || nt.Signature != 0x00004550 || nt.FileHeader is null || nt.OptionalHeader is null)
-                throw new InvalidDataException("不是有效的 PE 映像（MZ / PE 头缺失）");
-
-            BuildReport(pe, bytes, path);
-        }
-        catch (Exception ex)
-        {
-            ReportTree.Items.Clear();
-            ReportTree.Items.Add(Node("PARSE FAILED: " + ex.Message, Danger, true));
-            DropTitle.Text = "PARSE FAILED";
-            DropHint.Text = Path.GetFileName(path) + "  ·  drop another file to retry";
-            ReportMeta.Text = "error";
-        }
-    }
-
-    private void BuildReport(PeFile pe, byte[] bytes, string path)
-    {
-        var nt = pe.ImageNtHeaders!;
-        var fh = nt.FileHeader;
-        var oh = nt.OptionalHeader;
-
-        uint machine = Convert.ToUInt32(fh.Machine);
-        string arch = machine switch
-        {
-            0x014C => "x86   (I386 / 32-bit)",
-            0x8664 => "x64   (AMD64 / 64-bit)",
-            0xAA64 => "ARM64 (AArch64)",
-            0x01C0 or 0x01C4 => "ARM   (32-bit)",
-            0x0200 => "IA64",
-            _ => $"UNKNOWN (0x{machine:X4})"
-        };
-
-        long stamp = fh.TimeDateStamp;
-        string compiled = stamp is > 0 and < 253402300799
-            ? DateTimeOffset.FromUnixTimeSeconds(stamp).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz")
-            : "N/A  (timestamp 0 / invalid)";
-
-        string sha256 = Convert.ToHexString(SHA256.HashData(bytes));
-
-        // 1. basic info
-        var basic = Node("BASIC INFO / 基本信息", Accent, true);
-        basic.IsExpanded = true;
-        basic.Items.Add(Node($"Architecture   : {arch}"));
-        basic.Items.Add(Node($"Compile Time   : {compiled}"));
-        basic.Items.Add(Node($"EntryPoint     : 0x{oh.AddressOfEntryPoint:X8}  (RVA)"));
-        basic.Items.Add(Node($"SHA256         : {sha256}"));
-
-        // 2. sections + packer markers
-        var sections = pe.ImageSectionHeaders;
-        var names = new List<string>();
-        var sectionRoot = Node("SECTIONS / 节区", Accent, true);
-        if (sections is not null)
-        {
-            foreach (var s in sections)
-            {
-                string name = (s.Name ?? "?").TrimEnd('\0', ' ');
-                names.Add(name);
-                bool flagged = IsPackerSection(name);
-                sectionRoot.Items.Add(Node(
-                    $"{name,-10}  VA 0x{s.VirtualAddress:X8}  VSIZE 0x{s.VirtualSize:X8}",
-                    flagged ? Danger : Fg));
-            }
-        }
-        if (names.Count == 0) sectionRoot.Items.Add(Node("(no sections)", Muted));
-
-        string[] hits = names.Where(IsPackerSection)
-            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        var packerRoot = Node("PACKER DETECTION / 查壳", hits.Length > 0 ? Danger : Accent, true);
-        packerRoot.IsExpanded = true;
-        packerRoot.Items.Add(hits.Length > 0
-            ? Node($"检测到加壳  →  {string.Join(", ", hits)}", Danger, true)
-            : Node("未检测到常见加壳特征", Safe));
-
-        // 3. imports
-        var imports = pe.ImportedFunctions;
-        var importRoot = Node("IMPORTS / 导入表", Accent, true);
-        importRoot.IsExpanded = true;
-        int sensitiveCount = 0;
-
-        if (imports is null || imports.Length == 0)
-        {
-            importRoot.Items.Add(Node("(无导入表 / no imports)", Muted));
-        }
-        else
-        {
-            foreach (var g in imports
-                         .GroupBy(f => string.IsNullOrWhiteSpace(f.DLL) ? "<unknown>" : f.DLL!,
-                             StringComparer.OrdinalIgnoreCase)
-                         .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
-            {
-                var apis = g.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToList();
-                bool hasSensitive = apis.Any(f => SensitiveApis.Contains(f.Name ?? ""));
-                var dllNode = Node(
-                    hasSensitive ? $"{g.Key}   [{apis.Count}]   [!]" : $"{g.Key}   [{apis.Count}]",
-                    hasSensitive ? Danger : Fg);
-
-                foreach (var f in apis)
-                {
-                    string api = string.IsNullOrWhiteSpace(f.Name) ? "<ordinal>" : f.Name!;
-                    bool sensitive = SensitiveApis.Contains(api);
-                    if (sensitive) sensitiveCount++;
-                    dllNode.Items.Add(Node(
-                        sensitive ? $"{api}   <- SENSITIVE" : api,
-                        sensitive ? Danger : Fg));
-                }
-                importRoot.Items.Add(dllNode);
-            }
-        }
-
-        if (sensitiveCount > 0)
-            importRoot.Items.Insert(0,
-                Node($"检测到 {sensitiveCount} 个敏感 API 调用 (injection surface)", Danger, true));
-
-        ReportTree.Items.Clear();
-        ReportTree.Items.Add(basic);
-        ReportTree.Items.Add(sectionRoot);
-        ReportTree.Items.Add(packerRoot);
-        ReportTree.Items.Add(importRoot);
-
-        DropTitle.Text = Path.GetFileName(path);
-        DropHint.Text = $"{bytes.Length:N0} bytes  ·  {arch}  ·  drop another file to reload";
-        ReportMeta.Text = $"{names.Count} sections  |  {imports?.Length ?? 0} imports  |  " +
-                          $"{imports?.Select(f => f.DLL).Distinct(StringComparer.OrdinalIgnoreCase).Count() ?? 0} DLLs";
     }
 }

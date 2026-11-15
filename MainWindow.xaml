@@ -2,10 +2,11 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="Breccia" Height="700" Width="1020" MinHeight="480" MinWidth="700"
+        Title="Breccia" Height="780" Width="1160" MinHeight="560" MinWidth="860"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" AllowsTransparency="True" ResizeMode="CanResize"
-        Background="Transparent" FontFamily="Consolas">
+        Background="Transparent" FontFamily="Consolas"
+        KeyDown="Window_KeyDown">
 
   <shell:WindowChrome.WindowChrome>
     <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6"
@@ -40,6 +41,56 @@
                 <Setter Property="Foreground" Value="#E9EDF5"/>
               </Trigger>
             </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="ToolbarButton" TargetType="Button">
+      <Setter Property="Height" Value="26"/>
+      <Setter Property="Padding" Value="12,0"/>
+      <Setter Property="Margin" Value="0,0,6,0"/>
+      <Setter Property="Background" Value="#111A2E"/>
+      <Setter Property="Foreground" Value="#E9EDF5"/>
+      <Setter Property="BorderBrush" Value="#243049"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                    CornerRadius="3" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#4F8CFF"/>
+                <Setter Property="Foreground" Value="#4F8CFF"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="FilterBox" TargetType="TextBox">
+      <Setter Property="Height" Value="26"/>
+      <Setter Property="Width" Value="250"/>
+      <Setter Property="Background" Value="#0B0F19"/>
+      <Setter Property="Foreground" Value="#E9EDF5"/>
+      <Setter Property="CaretBrush" Value="#4F8CFF"/>
+      <Setter Property="BorderBrush" Value="#243049"/>
+      <Setter Property="Padding" Value="8,3"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="3">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                            VerticalAlignment="Center"/>
+            </Border>
           </ControlTemplate>
         </Setter.Value>
       </Setter>
@@ -133,14 +184,51 @@
         </Setter.Value>
       </Setter>
     </Style>
+
+    <Style TargetType="ContextMenu">
+      <Setter Property="Background" Value="#0B0F19"/>
+      <Setter Property="BorderBrush" Value="#243049"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ContextMenu">
+            <Border Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" Padding="3">
+              <ItemsPresenter/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style TargetType="MenuItem">
+      <Setter Property="Foreground" Value="#E9EDF5"/>
+      <Setter Property="Background" Value="#0B0F19"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="MenuItem">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="12,6">
+              <ContentPresenter ContentSource="Header"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsHighlighted" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#1C2A45"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
   </Window.Resources>
 
   <Border CornerRadius="8" Background="#07090F" BorderBrush="#1B2333" BorderThickness="1">
     <Grid>
       <Grid.RowDefinitions>
         <RowDefinition Height="40"/>
-        <RowDefinition Height="152"/>
+        <RowDefinition Height="46"/>
+        <RowDefinition Height="150"/>
         <RowDefinition Height="*"/>
+        <RowDefinition Height="30"/>
       </Grid.RowDefinitions>
 
       <Grid Grid.Row="0">
@@ -148,7 +236,8 @@
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0"
                     IsHitTestVisible="False">
           <TextBlock Text="BRECCIA" Foreground="#E9EDF5" FontSize="13" FontWeight="Bold"/>
-          <TextBlock Text="// PE STRUCTURE INSPECTOR" Foreground="#4F8CFF" FontSize="11" Margin="10,2,0,0"/>
+          <TextBlock Text="// PE STRUCTURE &amp; SECURITY INSPECTOR" Foreground="#4F8CFF"
+                     FontSize="11" Margin="10,2,0,0"/>
         </StackPanel>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
           <Button Content="&#x2014;" Style="{StaticResource ChromeButton}" Click="Minimize_Click" ToolTip="Minimize"/>
@@ -157,33 +246,77 @@
         <Rectangle Height="1" Fill="#1B2333" VerticalAlignment="Bottom" IsHitTestVisible="False"/>
       </Grid>
 
-      <Border x:Name="DropZone" Grid.Row="1" Margin="20,8" CornerRadius="6"
+      <Grid Grid.Row="1" Margin="20,0">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <Button Content="OPEN  [Ctrl+O]" Style="{StaticResource ToolbarButton}" Click="Open_Click"/>
+          <Button Content="EXPORT JSON" Style="{StaticResource ToolbarButton}" Click="ExportJson_Click"/>
+          <Button Content="EXPORT TXT" Style="{StaticResource ToolbarButton}" Click="ExportTxt_Click"/>
+          <Button Content="EXPAND ALL" Style="{StaticResource ToolbarButton}" Click="ExpandAll_Click"/>
+          <Button Content="COLLAPSE ALL" Style="{StaticResource ToolbarButton}" Click="CollapseAll_Click"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+          <TextBlock x:Name="FilterCount" Foreground="#4F8CFF" FontSize="11"
+                     VerticalAlignment="Center" Margin="0,0,10,0"/>
+          <TextBlock Text="FILTER" Foreground="#7C879E" FontSize="11"
+                     VerticalAlignment="Center" Margin="0,0,8,0"/>
+          <Grid>
+            <TextBox x:Name="SearchBox" Style="{StaticResource FilterBox}"
+                     TextChanged="SearchBox_TextChanged"/>
+            <TextBlock x:Name="SearchPlaceholder" Text="DLL / API / section / keyword ..."
+                       Foreground="#7C879E" FontSize="11" Margin="9,0,0,0"
+                       VerticalAlignment="Center" IsHitTestVisible="False"/>
+          </Grid>
+        </StackPanel>
+      </Grid>
+
+      <Border x:Name="DropZone" Grid.Row="2" Margin="20,6" CornerRadius="6"
               BorderThickness="1.5" BorderBrush="#243049" Background="#0C1220"
-              AllowDrop="True"
+              AllowDrop="True" Cursor="Hand"
               DragEnter="DropZone_DragEnter" DragLeave="DropZone_DragLeave"
               DragOver="DropZone_DragOver" Drop="DropZone_Drop"
-              MouseEnter="DropZone_MouseEnter" MouseLeave="DropZone_MouseLeave">
+              MouseEnter="DropZone_MouseEnter" MouseLeave="DropZone_MouseLeave"
+              MouseLeftButtonUp="DropZone_Click">
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-          <TextBlock Text="[ &#x2193; ]" Foreground="#4F8CFF" FontSize="24"
-                     HorizontalAlignment="Center" Margin="0,0,0,8"/>
+          <TextBlock Text="[ &#x2193; ]" Foreground="#4F8CFF" FontSize="22"
+                     HorizontalAlignment="Center" Margin="0,0,0,6"/>
           <TextBlock x:Name="DropTitle" Text="Drop EXE / DLL Here" Foreground="#E9EDF5"
-                     FontSize="21" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-          <TextBlock x:Name="DropHint" Text="PE HEADER  /  SECTIONS  /  PACKER DETECTION  /  IMPORTS"
+                     FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+          <TextBlock x:Name="DropHint" Text="拖入或点击选择  ·  HEADERS / SECTIONS / IMPORTS / EXPORTS / RISK"
                      Foreground="#7C879E" FontSize="11" HorizontalAlignment="Center" Margin="0,8,0,0"/>
         </StackPanel>
       </Border>
 
-      <Grid Grid.Row="2" Margin="20,4,20,20">
+      <Grid Grid.Row="3" Margin="20,4,20,10">
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto"/>
           <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
         <DockPanel Margin="0,0,0,8">
           <TextBlock Text="// STRUCTURE REPORT" Foreground="#4F8CFF" FontSize="11" FontWeight="SemiBold"/>
-          <TextBlock x:Name="ReportMeta" Foreground="#7C879E" FontSize="11"
-                     Margin="14,0,0,0" TextTrimming="CharacterEllipsis"/>
+          <TextBlock x:Name="ReportMeta" Text="no file loaded" Foreground="#7C879E"
+                     FontSize="11" Margin="14,0,0,0" TextTrimming="CharacterEllipsis"/>
         </DockPanel>
-        <TreeView x:Name="ReportTree" Grid.Row="1"/>
+        <TreeView x:Name="ReportTree" Grid.Row="1">
+          <TreeView.ContextMenu>
+            <ContextMenu>
+              <MenuItem Header="Copy node text" Click="CopyNode_Click"/>
+              <MenuItem Header="Copy subtree" Click="CopySubtree_Click"/>
+            </ContextMenu>
+          </TreeView.ContextMenu>
+        </TreeView>
+      </Grid>
+
+      <Grid Grid.Row="4" Margin="20,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock x:Name="StatusLeft" Text="no file loaded" Foreground="#7C879E"
+                   FontSize="10.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+        <TextBlock x:Name="StatusRight" Text="ready" Foreground="#4F8CFF"
+                   FontSize="10.5" VerticalAlignment="Center"/>
+        <Rectangle Grid.ColumnSpan="2" Height="1" Fill="#1B2333" VerticalAlignment="Top"
+                   IsHitTestVisible="False"/>
       </Grid>
     </Grid>
   </Border>
