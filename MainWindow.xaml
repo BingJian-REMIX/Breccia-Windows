@@ -308,13 +308,18 @@
 
       <Grid Grid.Row="4" Margin="20,0">
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*" MinWidth="0"/>
+          <ColumnDefinition Width="Auto" MinWidth="0"/>
         </Grid.ColumnDefinitions>
-        <TextBlock x:Name="StatusLeft" Text="no file loaded" Foreground="#7C879E"
-                   FontSize="10.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-        <TextBlock x:Name="StatusRight" Text="ready" Foreground="#4F8CFF"
-                   FontSize="10.5" VerticalAlignment="Center"/>
+        <TextBlock x:Name="StatusLeft" Grid.Column="0" Text="no file loaded" Foreground="#7C879E"
+                   FontSize="10.5" VerticalAlignment="Center" HorizontalAlignment="Left"
+                   TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                   ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+        <TextBlock x:Name="StatusRight" Grid.Column="1" Text="ready" Foreground="#4F8CFF"
+                   FontSize="10.5" VerticalAlignment="Center" HorizontalAlignment="Right"
+                   TextAlignment="Right" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                   MaxWidth="460" Margin="16,0,0,0"
+                   ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
         <Rectangle Grid.ColumnSpan="2" Height="1" Fill="#1B2333" VerticalAlignment="Top"
                    IsHitTestVisible="False"/>
       </Grid>
