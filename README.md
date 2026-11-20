@@ -13,8 +13,8 @@ Windows PE 结构分析与安全透视工具。C# / WPF，纯静态解析，不�
 ## 构建与运行
 
 ```bash
-git clone https://cnb.cool/RLRS-Studio/Breccia-WPF.git
-cd Breccia-WPF
+git clone https://cnb.cool/RLRS-Studio/Breccia-Windows.git
+cd Breccia-Windows
 dotnet restore
 dotnet run -c Release
 ```
