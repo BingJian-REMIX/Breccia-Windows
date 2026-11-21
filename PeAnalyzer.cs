@@ -1,5 +1,6 @@
 using System.IO;
 using System.Security.Cryptography;
+using System.Text.Json.Serialization;
 using PeNet;
 using PeNet.Header.Pe;
 
@@ -74,6 +75,13 @@ public sealed class AnalysisReport
     public List<SectionInfo> Sections { get; set; } = new();
     public List<Finding> Findings { get; set; } = new();
     public List<ReportNode> Nodes { get; set; } = new();
+    [JsonIgnore] public List<ReportNode> ReNodes { get; set; } = new();
+    public int ReFunctionCount { get; set; }
+    public int ReInstructionCount { get; set; }
+    public int ReStringCount { get; set; }
+    public int ReXrefCount { get; set; }
+    public string ReSummary =>
+        $"{ReFunctionCount} functions / {ReInstructionCount} instructions / {ReStringCount} strings / {ReXrefCount} sensitive xrefs";
 }
 
 public static class PeAnalyzer
@@ -81,7 +89,7 @@ public static class PeAnalyzer
     private static readonly string[] PackerMarkers =
         { "UPX0", "UPX1", ".VMP", ".ASPACK", ".THEMIDA", ".NSP", ".ENIGMA", ".RLPACK" };
 
-    private static readonly Dictionary<string, (string Level, int Weight)> SensitiveApis =
+    internal static readonly Dictionary<string, (string Level, int Weight)> SensitiveApis =
         new(StringComparer.OrdinalIgnoreCase)
         {
             ["CreateRemoteThread"] = ("CRITICAL", 12),
@@ -516,6 +524,16 @@ public static class PeAnalyzer
         Kv(hashNode, "MD5", report.Md5);
         Kv(hashNode, "ImpHash", report.ImpHash ?? "n/a");
         Kv(hashNode, "TypeRefHash", report.TypeRefHash ?? "n/a");
+
+        // ---- REVERSE ENGINEERING ----
+        var re = ReAnalyzer.Analyze(bytes, sectionInfos, Convert.ToUInt64(oh.ImageBase),
+            oh.AddressOfEntryPoint, machine, imports, descriptors);
+        report.ReNodes = re.Nodes;
+        report.ReFunctionCount = re.FunctionCount;
+        report.ReInstructionCount = re.InstructionCount;
+        report.ReStringCount = re.StringTotal;
+        report.ReXrefCount = re.ApiCallSites;
+        findings.AddRange(re.Findings);
 
         // ---- RISK RULES ----
         string[] packHits = sectionInfos.Where(s => s.PackerMarker).Select(s => s.Name)

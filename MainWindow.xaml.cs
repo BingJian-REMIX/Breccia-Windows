@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     };
 
     private static readonly SolidColorBrush Accent = B("#4F8CFF");
+    private static readonly SolidColorBrush Muted = B("#7C879E");
     private static readonly SolidColorBrush IdleBorder = B("#243049");
     private static readonly SolidColorBrush IdleBg = B("#0C1220");
     private static readonly SolidColorBrush ActiveBg = B("#111A2E");
@@ -31,10 +32,13 @@ public partial class MainWindow : Window
     private AnalysisReport? _report;
     private bool _hover;
     private bool _dragOver;
+    private bool _busy;
+    private int _activeTab;
 
     public MainWindow()
     {
         InitializeComponent();
+        UpdateTabVisuals();
         RenderReport();
     }
 
@@ -82,13 +86,30 @@ public partial class MainWindow : Window
             return;
         }
 
+        var source = _activeTab == 0 ? _report.Nodes : _report.ReNodes;
+        if (source.Count == 0)
+        {
+            string msg = _activeTab == 0
+                ? "// NO STRUCTURE DATA"
+                : "// NO REVERSE DATA (unsupported architecture or stripped image)";
+            ReportTree.Items.Add(Render(new ReportNode { Text = msg, Tone = Tone.Muted }, false));
+            FilterCount.Text = "";
+            return;
+        }
+
         bool searching = !string.IsNullOrWhiteSpace(filter);
-        var nodes = searching ? Filter(_report.Nodes, filter!.Trim()) : _report.Nodes;
+        var nodes = searching ? Filter(source, filter!.Trim()) : source;
         int index = 0;
         foreach (var n in nodes)
         {
             var item = Render(n, searching);
             item.IsExpanded = searching || index < 2;
+            if (_activeTab == 1 && !searching)
+            {
+                item.IsExpanded = true;
+                var firstGroup = item.Items.OfType<TreeViewItem>().FirstOrDefault(x => x.HasItems);
+                if (firstGroup is not null) firstGroup.IsExpanded = true;
+            }
             ReportTree.Items.Add(item);
             index++;
         }
@@ -115,19 +136,29 @@ public partial class MainWindow : Window
 
     // ---- analysis ----
 
-    private void Analyze(string path)
+    private async void Analyze(string path)
     {
+        if (_busy) return;
+        _busy = true;
         var sw = Stopwatch.StartNew();
         try
         {
-            _report = PeAnalyzer.Analyze(path);
+            StatusLeft.Text = path;
+            StatusRight.Text = "analyzing ...";
+            var report = await Task.Run(() => PeAnalyzer.Analyze(path));
             sw.Stop();
+            _report = report;
             RenderReport(SearchBox.Text);
-            DropTitle.Text = _report.FileName;
-            DropHint.Text = $"{_report.FileSize:N0} bytes  |  {_report.Architecture}  |  RISK {_report.RiskLevel} ({_report.RiskScore}/100)  |  drop another file to reload";
-            ReportMeta.Text = $"{_report.Nodes.Count} groups  |  {_report.Findings.Count} findings  |  {_report.ImportCount} imports  |  {_report.ExportCount} exports";
-            StatusLeft.Text = _report.FilePath;
-            StatusRight.Text = $"{_report.FileSize:N0} B  |  risk {_report.RiskScore}/100 {_report.RiskLevel}  |  {sw.ElapsedMilliseconds} ms";
+            DropTitle.Text = report.FileName;
+            DropHint.Text = $"{report.FileSize:N0} bytes  |  {report.Architecture}  |  RISK {report.RiskLevel} ({report.RiskScore}/100)  |  drop another file to reload";
+            ReportMeta.Text =
+                $"{report.Nodes.Count} groups  |  {report.Findings.Count} findings  |  " +
+                $"{report.ImportCount} imports / {report.ExportCount} exports  |  " +
+                $"RE {report.ReFunctionCount} fn / {report.ReInstructionCount} insn / {report.ReStringCount} str / {report.ReXrefCount} xref";
+            StatusLeft.Text = report.FilePath;
+            StatusRight.Text =
+                $"{report.FileSize:N0} B  |  risk {report.RiskScore}/100 {report.RiskLevel}  |  " +
+                $"{report.ReInstructionCount} insn  |  {sw.ElapsedMilliseconds} ms";
         }
         catch (Exception ex)
         {
@@ -141,6 +172,31 @@ public partial class MainWindow : Window
             StatusLeft.Text = path;
             StatusRight.Text = "error";
         }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // ---- tabs ----
+
+    private void TabStructure_Click(object sender, RoutedEventArgs e) => SetTab(0);
+    private void TabReverse_Click(object sender, RoutedEventArgs e) => SetTab(1);
+
+    private void SetTab(int tab)
+    {
+        if (_activeTab == tab) return;
+        _activeTab = tab;
+        UpdateTabVisuals();
+        RenderReport(SearchBox.Text);
+    }
+
+    private void UpdateTabVisuals()
+    {
+        TabStructure.Foreground = _activeTab == 0 ? Accent : Muted;
+        TabStructure.BorderBrush = _activeTab == 0 ? Accent : Brushes.Transparent;
+        TabReverse.Foreground = _activeTab == 1 ? Accent : Muted;
+        TabReverse.BorderBrush = _activeTab == 1 ? Accent : Brushes.Transparent;
     }
 
     // ---- commands ----
@@ -204,6 +260,12 @@ public partial class MainWindow : Window
             foreach (var c in n.Children) Walk(c, depth + 1);
         }
         foreach (var n in r.Nodes) Walk(n, 0);
+        if (r.ReNodes.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("=== REVERSE ENGINEERING / 深度逆向 ===");
+            foreach (var n in r.ReNodes) Walk(n, 0);
+        }
         return sb.ToString();
     }
 

@@ -11,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Iced" Version="1.22.0" />
     <PackageReference Include="PeNet" Version="6.1.2" />
   </ItemGroup>
 

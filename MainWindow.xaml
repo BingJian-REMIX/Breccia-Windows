@@ -74,6 +74,34 @@
       </Setter>
     </Style>
 
+    <Style x:Key="TabButton" TargetType="Button">
+      <Setter Property="Height" Value="24"/>
+      <Setter Property="Padding" Value="12,0"/>
+      <Setter Property="Margin" Value="0,0,4,0"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="#7C879E"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="0,0,0,2"
+                    Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Foreground" Value="#E9EDF5"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style x:Key="FilterBox" TargetType="TextBox">
       <Setter Property="Height" Value="26"/>
       <Setter Property="Width" Value="250"/>
@@ -281,7 +309,7 @@
                      HorizontalAlignment="Center" Margin="0,0,0,6"/>
           <TextBlock x:Name="DropTitle" Text="Drop EXE / DLL Here" Foreground="#E9EDF5"
                      FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-          <TextBlock x:Name="DropHint" Text="拖入或点击选择  ·  HEADERS / SECTIONS / IMPORTS / EXPORTS / RISK"
+          <TextBlock x:Name="DropHint" Text="拖入或点击选择  ·  HEADERS / SECTIONS / IMPORTS / RISK / DISASM / STRINGS"
                      Foreground="#7C879E" FontSize="11" HorizontalAlignment="Center" Margin="0,8,0,0"/>
         </StackPanel>
       </Border>
@@ -291,11 +319,21 @@
           <RowDefinition Height="Auto"/>
           <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <DockPanel Margin="0,0,0,8">
-          <TextBlock Text="// STRUCTURE REPORT" Foreground="#4F8CFF" FontSize="11" FontWeight="SemiBold"/>
-          <TextBlock x:Name="ReportMeta" Text="no file loaded" Foreground="#7C879E"
-                     FontSize="11" Margin="14,0,0,0" TextTrimming="CharacterEllipsis"/>
-        </DockPanel>
+        <Grid Margin="0,0,0,8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*" MinWidth="0"/>
+          </Grid.ColumnDefinitions>
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <Button x:Name="TabStructure" Content="STRUCTURE" Style="{StaticResource TabButton}"
+                    Click="TabStructure_Click" ToolTip="PE 结构 / 安全透视"/>
+            <Button x:Name="TabReverse" Content="REVERSE" Style="{StaticResource TabButton}"
+                    Click="TabReverse_Click" ToolTip="反汇编 / 函数 / 字符串 / IAT 交叉引用"/>
+          </StackPanel>
+          <TextBlock x:Name="ReportMeta" Grid.Column="1" Text="no file loaded" Foreground="#7C879E"
+                     FontSize="11" Margin="12,0,0,0" VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
+        </Grid>
         <TreeView x:Name="ReportTree" Grid.Row="1">
           <TreeView.ContextMenu>
             <ContextMenu>
