@@ -20,6 +20,7 @@ public partial class MainWindow
     private string _dynNotice = "";
     private List<DynImport> _dynImports = new();
     private string _disasmSig = "", _memSig = "", _regSig = "";
+    private string _treeSig = "";
 
     public sealed class DynLineVm
     {
@@ -70,8 +71,12 @@ public partial class MainWindow
 
         RenderDynTexts(snap);
         int rev = _session.Revision;
-        if (rev != _lastRev || _lastRev < 0)
+        // State / stop reason can flip without a revision bump from the debug thread:
+        // include them in the signature so the left tree never shows a stale state.
+        string treeSig = $"{rev}|{snap.State}|{snap.StopReason}|{_dynNotice}|{_dynImports.Count}";
+        if (treeSig != _treeSig)
         {
+            _treeSig = treeSig;
             _lastRev = rev;
             RenderDynTree(snap);
         }
@@ -95,8 +100,11 @@ public partial class MainWindow
             DynMemCaption.Text = "";
             DynRegCaption.Text = "";
         }
-        if (_lastRev == 0) return;
+        if (_treeSig == "idle") return;
+        _treeSig = "idle";
         _lastRev = 0;
+        _dynImports.Clear();
+        _dynNotice = "";
 
         var root = new ReportNode { Text = "// NO DEBUG SESSION", Tone = Tone.Muted };
         root.Add("LAUNCH  调试已加载文件，断在 OEP", Tone.Accent);
@@ -187,11 +195,11 @@ public partial class MainWindow
         var root = new ReportNode { Text = snap.TargetPath.Length > 0 ? Path.GetFileName(snap.TargetPath) : "session", Tone = Tone.Accent, Bold = true };
 
         var session = root.Group($"SESSION  pid {snap.Pid}", Tone.Accent);
-        session.Add($"state       : {snap.State}" + (snap.StopReason.Length > 0 ? $"  ({snap.StopReason})" : ""));
-        session.Add($"architecture: {(snap.Bitness == 32 ? "x86 (WOW64)" : "x64")}");
-        session.Add($"target      : {snap.TargetPath}");
-        session.Add($"cursor      : 0x{snap.Cursor:X}" + (snap.CursorIsPc ? "  (RIP)" : "  (manual)"));
-        if (_session is not null) session.Add($"modes       : {(_session.HasSession ? "attached" : "detached")}");
+        session.Add($"state : {snap.State}" + (snap.StopReason.Length > 0 ? $"  {snap.StopReason}" : ""));
+        session.Add($"arch  : {(snap.Bitness == 32 ? "x86 (WOW64)" : "x64")}");
+        session.Add($"target: {Path.GetFileName(snap.TargetPath)}");
+        session.Add($"cursor: 0x{snap.Cursor:X}" + (snap.CursorIsPc ? "  RIP" : "  manual"));
+        if (_session is not null) session.Add($"mode        : {(_session.IsLaunched ? "launched" : "attached")}");
         if (_dynNotice.Length > 0) session.Add(_dynNotice, Tone.Danger, true);
 
         var modules = root.Group($"MODULES  {snap.Modules.Count}", Tone.Normal);

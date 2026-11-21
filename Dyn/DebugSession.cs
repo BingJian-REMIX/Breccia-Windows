@@ -140,6 +140,7 @@ public sealed class DebugSession : IDisposable
     public int InstructionCount { get; private set; }
 
     public bool HasSession => Pid != 0 && State != DynState.Exited && State != DynState.Failed;
+    public bool IsLaunched => _launched;
 
     // ---- lifecycle ----
 
