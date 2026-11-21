@@ -15,6 +15,10 @@ public sealed class ReportNode
     public bool Bold { get; set; }
     public List<ReportNode> Children { get; set; } = new();
 
+    /// <summary>Optional payload for UI wiring (e.g. an address to follow). Not serialized.</summary>
+    [JsonIgnore]
+    public object? Tag { get; set; }
+
     public ReportNode Add(string text, Tone tone = Tone.Normal, bool bold = false)
     {
         Children.Add(new ReportNode { Text = text, Tone = tone, Bold = bold });

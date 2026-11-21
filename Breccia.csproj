@@ -8,6 +8,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Breccia.WPF</RootNamespace>
     <AssemblyName>Breccia</AssemblyName>
+
+    <!-- Version metadata matters: unsigned PEs with no product info score higher on
+         heuristic AV detection, and this one legitimately uses debugger APIs. -->
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <Product>Breccia</Product>
+    <AssemblyTitle>Breccia — PE Structure &amp; Security Inspector</AssemblyTitle>
+    <Company>RLRS Studio</Company>
+    <Copyright>Copyright (c) 2026 RLRS Studio</Copyright>
+    <Description>Static and dynamic PE inspection for Windows: headers, imports, entropy, disassembly, IAT cross references and an interactive debugger.</Description>
+    <RepositoryUrl>https://cnb.cool/RLRS-Studio/Breccia-Windows</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>

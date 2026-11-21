@@ -78,6 +78,7 @@ public partial class MainWindow : Window
 
     private void RenderReport(string? filter = null)
     {
+        if (_activeTab == 2) return;
         ReportTree.Items.Clear();
         if (_report is null)
         {
@@ -188,6 +189,12 @@ public partial class MainWindow : Window
         if (_activeTab == tab) return;
         _activeTab = tab;
         UpdateTabVisuals();
+        ApplyTabLayout();
+        if (tab == 2)
+        {
+            StartDynPolling();
+            return;
+        }
         RenderReport(SearchBox.Text);
     }
 
@@ -197,6 +204,8 @@ public partial class MainWindow : Window
         TabStructure.BorderBrush = _activeTab == 0 ? Accent : Brushes.Transparent;
         TabReverse.Foreground = _activeTab == 1 ? Accent : Muted;
         TabReverse.BorderBrush = _activeTab == 1 ? Accent : Brushes.Transparent;
+        TabDynamic.Foreground = _activeTab == 2 ? Accent : Muted;
+        TabDynamic.BorderBrush = _activeTab == 2 ? Accent : Brushes.Transparent;
     }
 
     // ---- commands ----
@@ -330,7 +339,44 @@ public partial class MainWindow : Window
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
+        if (_activeTab == 2 && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            switch (e.Key)
+            {
+                case Key.F5:
+                    DynRun_Click(sender, e);
+                    e.Handled = true;
+                    return;
+                case Key.F7:
+                    DynStep_Click(sender, e);
+                    e.Handled = true;
+                    return;
+                case Key.F8:
+                    DynOver_Click(sender, e);
+                    e.Handled = true;
+                    return;
+                case Key.F9:
+                    DynToggleBreakpoint();
+                    e.Handled = true;
+                    return;
+            }
+        }
         if (e.KeyboardDevice.Modifiers != ModifierKeys.Control) return;
+        switch (e.Key)
+        {
+            case Key.D1:
+                SetTab(0);
+                e.Handled = true;
+                return;
+            case Key.D2:
+                SetTab(1);
+                e.Handled = true;
+                return;
+            case Key.D3:
+                SetTab(2);
+                e.Handled = true;
+                return;
+        }
         switch (e.Key)
         {
             case Key.O:
@@ -357,6 +403,12 @@ public partial class MainWindow : Window
     private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
+
+    protected override void OnClosed(EventArgs e)
+    {
+        DisposeDynamicSession();
+        base.OnClosed(e);
+    }
 
     private void DropZone_MouseEnter(object sender, MouseEventArgs e)
     {

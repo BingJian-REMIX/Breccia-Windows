@@ -1,6 +1,6 @@
 # BRECCIA // PE STRUCTURE & SECURITY INSPECTOR
 
-Windows PE 结构、安全透视与静态逆向工具。C# / WPF，纯静态解析，不执行被分析文件。
+Windows PE 结构、安全透视、静态逆向与动态调试工具。C# / WPF。静态部分只读解析；动态部分由你显式 `LAUNCH` / `ATTACH` 才会运行目标。
 
 NuGet 依赖：**PeNet 6.1.2**（PE 结构解析）、**Iced 1.22.0**（x86/x64 反汇编，纯托管无原生 DLL）。
 UI、主题、交互全部原生 WPF，无第三方控件库 / MVVM 框架。
@@ -26,14 +26,16 @@ dotnet run -c Release
 dotnet run -c Release -- "C:/Windows/System32/notepad.exe"
 ```
 
-生成单文件可执行程序（framework-dependent，win-x64）：
+发布（framework-dependent，win-x64，多文件）：
 
 ```bash
 dotnet publish Breccia.csproj -c Release -r win-x64 --self-contained false \
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+  -p:PublishSingleFile=false -p:DebugType=none -o publish
 ```
 
-`publish/Breccia.exe` 约 430 KB，内含 PeNet，运行时需与 .NET 10 桌面运行时配合。`bin/`、`obj/`、`publish/` 均不纳入版本库。
+产物是 `Breccia.exe`（apphost，约 160 KB）+ `Breccia.dll` + `PeNet.dll` + `Iced.dll` + 两个 json，需 .NET 10 桌面运行时。
+
+不要用 `PublishSingleFile` 分发：单文件会先把托管程序集解出再加载，叠加调试器行为，杀软启发式命中率明显更高（见「杀软误报」）。`bin/`、`obj/`、`publish/` 均不纳入版本库。
 
 ## 使用
 
@@ -50,7 +52,13 @@ dotnet publish Breccia.csproj -c Release -r win-x64 --self-contained false \
 
 搜索框实时过滤当前标签页的报告树，保留命中节点及其祖先链。
 
-报告区分两个标签：`STRUCTURE`（PE 结构 / 安全）与 `REVERSE`（反汇编 / 逆向），工具条上方切换。
+报告区分三个标签，`Ctrl+1` / `Ctrl+2` / `Ctrl+3` 或点击切换：
+
+| 标签 | 内容 |
+|---|---|
+| `STRUCTURE` | PE 结构、安全透视、风险摘要 |
+| `REVERSE` | 反汇编、函数、IAT 交叉引用、字符串 |
+| `DYNAMIC` | 内置调试器：启动 / 附加、断点、单步、寄存器、内存 |
 
 ## 分析能力
 
@@ -75,15 +83,70 @@ dotnet publish Breccia.csproj -c Release -r win-x64 --self-contained false \
 
 逆向发现项会计入风险分（敏感调用点、直接 syscall、壳指纹、PEB 读取、overlay 等各自独立权重）。
 
+## 动态调试（`DYNAMIC` 标签）
+
+`LAUNCH` 用 `DEBUG_ONLY_THIS_PROCESS` 启动当前加载的文件，在 OEP 自动下断；`ATTACH` 接管已有 pid（同用户进程）。
+
+| 操作 | 入口 |
+|---|---|
+| 启动 / 附加 | `LAUNCH`（无会话时 `F5` 等同）/ `ATTACH` + PID |
+| 运行 / 单步 / 步过 | `F5` / `F7` / `F8` |
+| 断点 | `F9` 在光标处开关；`0xCC` 写入目标代码页，移除时还原 |
+| 跟随地址 | 地址栏输入 `0x...` 后 `GO`；留空 = 回到 RIP；点击树里的模块 / 断点地址也可跟随 |
+| 动态 IAT | `IAT`：按内存中的导入描述符还原每个槽的解析地址，并校验目标是否落在声明的 DLL 内（`out-of-module` = 转发导出或 hook，逐条看） |
+| 内存导出 | `DUMP`：导出光标所在已提交区域（上限 64 MB） |
+
+面板：左 = SESSION / MODULES / THREADS / BREAKPOINTS / IAT / EVENTS；中 = 光标处反汇编（Iced）+ 十六进制内存；右 = 寄存器 + EFLAGS 位。
+
+实现要点：
+
+- 调试循环独占一个后台线程，`CreateProcess` / `DebugActiveProcess` 必须在同一线程（Windows 只认创建者线程收事件）。
+- x64 与 WOW64 双上下文：`CONTEXT` 必须 16 字节对齐，否则 `GetThreadContext` 返回 `ERROR_INVALID_HANDLE`；32 位目标走 `Wow64GetThreadContext`，断点异常码是 `0x4000001F`（不是 `0x80000003`）。
+- 断点命中后先还原原始字节、回退 IP，再在 `Run` 时用单步越过断点并重新写回，避免同一断点无限命中。
+- 首次异常只对致命码（AV / 非法指令 / 除零 / 特权指令 / fastfail / 加载失败）停下，`0x406D1388`（MSVC 线程命名）这类运行时簿记异常直接放行。
+- 单步用 EFLAGS.TF；步过对 `call` 在下一指令下临时断点，其余指令单步。
+
+**动态调试会真实执行目标进程。不可信样本请放进虚拟机 / 快照。** 断点写入会改动目标代码页，移除断点或结束会话即还原。
+
+## 杀软误报（必读）
+
+程序本身实现了一个调试器，运行时的调用序列是：
+
+```
+CreateProcess(DEBUG_ONLY_THIS_PROCESS) → OpenProcess → ReadProcessMemory
+→ VirtualProtectEx(PAGE_EXECUTE_READWRITE) → WriteProcessMemory → 修改目标代码页
+```
+
+这与进程注入器 / 内存补丁器同构，行为引擎会直接判定并**结束进程**（不是删除文件，文件通常还在）。国内杀软（火绒等）默认开启行为防护，命中后会弹窗并终止 Breccia。
+
+已做的降误报措施：
+
+- 分发改为多文件（不再单文件自解压到临时目录）；
+- 补全 `Product` / `Company` / `Version` / `Description` 版本资源（无版本信息的 PE 会被加分）；
+- 发布不带 PDB。
+
+仍需你手动加白，因为调试行为本身无法去掉（去掉等于删掉功能）：
+
+1. 火绒 → 防护中心 → 信任区 → 添加文件 `publish\Breccia.exe`，并添加目录 `publish\`；
+2. 或在行为拦截弹窗里选「允许程序运行」；
+3. 加白后重新启动 Breccia；已拦截过的进程需要重启程序。
+
+自行核验：源码全量在仓库，可 `dotnet build` 自己编译对比；`publish/Breccia.exe` 的 SHA256 见发布提交说明。
+
+静态两个标签（`STRUCTURE` / `REVERSE`）不碰目标进程，只读取文件，不会被行为引擎拦截。
+
 ## 工程结构
 
 | 文件 | 职责 |
 |---|---|
 | `PeAnalyzer.cs` | 纯数据层：模型 + PE 解析 + 安全规则 + 风险评分 |
 | `ReAnalyzer.cs` | 逆向数据层：反汇编、函数识别、IAT 交叉引用、字符串、指纹、Rich header、overlay、熵图、异常 |
-| `MainWindow.xaml` / `.xaml.cs` | 暗黑无边框 UI、双标签渲染与交互 |
-| `App.xaml` / `.xaml.cs` | 应用入口、命令行参数加载 |
-| `Breccia.csproj` | `net10.0-windows` + `UseWPF` + PeNet + Iced |
+| `Dyn/NativeDebug.cs` | Win32 调试 API 的 P/Invoke 与结构布局（`DEBUG_EVENT`、`CONTEXT`、`MEMORY_BASIC_INFORMATION`） |
+| `Dyn/DebugSession.cs` | 调试引擎：事件循环、断点、单步、上下文、内存、动态 IAT 解析、导出 |
+| `MainWindow.xaml` / `.xaml.cs` | 暗黑无边框 UI、三标签渲染与交互 |
+| `MainWindow.Dynamic.cs` | `DYNAMIC` 标签的渲染与命令转发（`partial class MainWindow`） |
+| `App.xaml` / `.xaml.cs` | 应用入口、命令行参数加载、未处理异常落盘（`%TEMP%reccia-crash.log`） |
+| `Breccia.csproj` | `net10.0-windows` + `UseWPF` + PeNet + Iced + 版本资源 |
 
 PeNet 的集合属性可空且 lazy 解析对畸形 PE 会抛异常，所有可选结构统一走 `Arr<T>` / `Safe<T>` 防御式读取；Iced 解码遇 `INVALID` 立即停止，单个函数最多 4 KB / 56 条指令。
 
@@ -98,4 +161,8 @@ PeNet 的集合属性可空且 lazy 解析对畸形 PE 会抛异常，所有可�
 - 壳指纹只有 UPX / ASPack / MEW 三条入口签名 + 节名匹配，不是 PEiD 签名库。
 - 只支持 x86 / x64 反汇编；ARM64 镜像跳过反汇编，仍做字符串与结构分析。
 - 导出表 > 500 项、重定位 > 25 块在树内截断显示。
-- 未接入在线查毒、YARA 引擎、动态调试、MVVM 框架或单元测试。
+- 动态调试不做：内存 dump 重建 PE（unpacking）、调用栈回溯、硬件断点、全量 trace、多线程独立控制（停在任何事件时全部线程都被系统挂起，只读当前线程上下文）。
+- 动态调试只支持 x86 / x64；ARM64 目标无法启动 / 附加。
+- `ATTACH` 对其它用户的进程需要 `SeDebugPrivilege`（本程序未提权，未提权时附加会失败）。
+- 内存视图每次读取 256 字节；反汇编窗口 22 条指令；不跟随跨页指令。
+- 未接入在线查毒、YARA 引擎、MVVM 框架或单元测试。

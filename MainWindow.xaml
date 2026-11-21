@@ -124,6 +124,60 @@
       </Setter>
     </Style>
 
+    <Style x:Key="DynButton" TargetType="Button">
+      <Setter Property="Height" Value="22"/>
+      <Setter Property="Padding" Value="9,0"/>
+      <Setter Property="Margin" Value="0,0,5,0"/>
+      <Setter Property="Background" Value="#111A2E"/>
+      <Setter Property="Foreground" Value="#C7D2E8"/>
+      <Setter Property="BorderBrush" Value="#243049"/>
+      <Setter Property="FontSize" Value="10.5"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                    CornerRadius="3" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#4F8CFF"/>
+                <Setter Property="Foreground" Value="#E9EDF5"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="#4A5468"/>
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#1B2333"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="DynInput" TargetType="TextBox">
+      <Setter Property="Height" Value="22"/>
+      <Setter Property="Background" Value="#0C1220"/>
+      <Setter Property="Foreground" Value="#E9EDF5"/>
+      <Setter Property="CaretBrush" Value="#4F8CFF"/>
+      <Setter Property="BorderBrush" Value="#243049"/>
+      <Setter Property="Padding" Value="6,2"/>
+      <Setter Property="FontSize" Value="10.5"/>
+      <Setter Property="Margin" Value="0,0,5,0"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="3">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                            VerticalAlignment="Center"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style TargetType="TreeViewItem">
       <Setter Property="Foreground" Value="#E9EDF5"/>
       <Setter Property="Background" Value="Transparent"/>
@@ -329,6 +383,8 @@
                     Click="TabStructure_Click" ToolTip="PE 结构 / 安全透视"/>
             <Button x:Name="TabReverse" Content="REVERSE" Style="{StaticResource TabButton}"
                     Click="TabReverse_Click" ToolTip="反汇编 / 函数 / 字符串 / IAT 交叉引用"/>
+            <Button x:Name="TabDynamic" Content="DYNAMIC" Style="{StaticResource TabButton}"
+                    Click="TabDynamic_Click" ToolTip="调试器：启动/附加 · 断点 · 单步 · 寄存器 · 内存"/>
           </StackPanel>
           <TextBlock x:Name="ReportMeta" Grid.Column="1" Text="no file loaded" Foreground="#7C879E"
                      FontSize="11" Margin="12,0,0,0" VerticalAlignment="Center"
@@ -342,6 +398,122 @@
             </ContextMenu>
           </TreeView.ContextMenu>
         </TreeView>
+
+        <Grid x:Name="DynamicPanel" Grid.Row="1" Visibility="Collapsed">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+
+          <Border Grid.Row="0" Background="#0A0E18" BorderBrush="#1B2333" BorderThickness="0,0,0,1"
+                  Padding="0,6,0,6" Margin="0,0,0,6">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <Button Content="LAUNCH" Style="{StaticResource DynButton}" Click="DynLaunch_Click"
+                      ToolTip="Debug-launch the loaded file (executes it)"/>
+              <Button x:Name="DynRunBtn" Content="RUN F5" Style="{StaticResource DynButton}" Click="DynRun_Click"/>
+              <Button x:Name="DynStepBtn" Content="STEP F7" Style="{StaticResource DynButton}" Click="DynStep_Click"/>
+              <Button x:Name="DynOverBtn" Content="OVER F8" Style="{StaticResource DynButton}" Click="DynOver_Click"/>
+              <Button x:Name="DynPauseBtn" Content="PAUSE" Style="{StaticResource DynButton}" Click="DynPause_Click"/>
+              <Button x:Name="DynKillBtn" Content="KILL" Style="{StaticResource DynButton}" Click="DynKill_Click"/>
+              <Rectangle Width="1" Fill="#1B2333" Margin="3,2,8,2"/>
+              <TextBlock Text="PID" Foreground="#7C879E" FontSize="10.5" VerticalAlignment="Center" Margin="0,0,5,0"/>
+              <TextBox x:Name="DynPidBox" Style="{StaticResource DynInput}" Width="58"/>
+              <Button Content="ATTACH" Style="{StaticResource DynButton}" Click="DynAttach_Click"
+                      ToolTip="Attach to a running process (same-user processes only)"/>
+              <Rectangle Width="1" Fill="#1B2333" Margin="3,2,8,2"/>
+              <TextBox x:Name="DynAddrBox" Style="{StaticResource DynInput}" Width="132"
+                       ToolTip="Address, e.g. 0x7ff708a719a0 or 401000"/>
+              <Button Content="GO" Style="{StaticResource DynButton}" Click="DynGo_Click"/>
+              <Button Content="IAT" Style="{StaticResource DynButton}" Click="DynIat_Click"
+                      ToolTip="Resolve the in-memory import table and verify each target's owning module"/>
+              <Button Content="DUMP" Style="{StaticResource DynButton}" Click="DynDump_Click"
+                      ToolTip="Dump the committed region around the cursor to a file"/>
+            </StackPanel>
+          </Border>
+
+          <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="300"/>
+              <ColumnDefinition Width="*" MinWidth="0"/>
+              <ColumnDefinition Width="392"/>
+            </Grid.ColumnDefinitions>
+
+            <TreeView x:Name="DynTree" Grid.Column="0" SelectedItemChanged="DynTree_SelectedItemChanged"
+                      ScrollViewer.HorizontalScrollBarVisibility="Auto">
+              <TreeView.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Copy node text" Click="DynCopyNode_Click"/>
+                </ContextMenu>
+              </TreeView.ContextMenu>
+            </TreeView>
+
+            <Grid Grid.Column="1" Margin="12,0,12,0">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*" MinHeight="80"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="186"/>
+              </Grid.RowDefinitions>
+
+              <DockPanel Grid.Row="0" Margin="0,0,0,4">
+                <TextBlock Text="// DISASSEMBLY" Foreground="#4F8CFF" FontSize="10.5" FontWeight="SemiBold"/>
+                <TextBlock x:Name="DynDisasmCaption" Foreground="#7C879E" FontSize="10.5"
+                           Margin="10,0,0,0" TextTrimming="CharacterEllipsis"/>
+              </DockPanel>
+              <Border Grid.Row="1" Background="#080B13" BorderBrush="#1B2333" BorderThickness="1"
+                      CornerRadius="3" Padding="8,6">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                  <ItemsControl x:Name="DynDisasmList">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding Text}" Foreground="{Binding Brush}"
+                                   FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap"/>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+              </Border>
+
+              <DockPanel Grid.Row="2" Margin="0,8,0,4">
+                <TextBlock Text="// MEMORY" Foreground="#4F8CFF" FontSize="10.5" FontWeight="SemiBold"/>
+                <TextBlock x:Name="DynMemCaption" Foreground="#7C879E" FontSize="10.5"
+                           Margin="10,0,0,0" TextTrimming="CharacterEllipsis"/>
+              </DockPanel>
+              <Border Grid.Row="3" Background="#080B13" BorderBrush="#1B2333" BorderThickness="1"
+                      CornerRadius="3" Padding="8,6">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                  <TextBlock x:Name="DynMemText" Text="// no session" Foreground="#3DDC97"
+                             FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap"/>
+                </ScrollViewer>
+              </Border>
+            </Grid>
+
+            <Grid Grid.Column="2">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+              </Grid.RowDefinitions>
+              <DockPanel Grid.Row="0" Margin="0,0,0,4">
+                <TextBlock Text="// REGISTERS" Foreground="#4F8CFF" FontSize="10.5" FontWeight="SemiBold"/>
+                <TextBlock x:Name="DynRegCaption" Foreground="#7C879E" FontSize="10.5"
+                           Margin="10,0,0,0" TextTrimming="CharacterEllipsis"/>
+              </DockPanel>
+              <Border Grid.Row="1" Background="#080B13" BorderBrush="#1B2333" BorderThickness="1"
+                      CornerRadius="3" Padding="8,6">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                  <TextBlock x:Name="DynRegText" Text="// no session" Foreground="#E9EDF5"
+                             FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap"/>
+                </ScrollViewer>
+              </Border>
+              <Border Grid.Row="2" Background="#080B13" BorderBrush="#1B2333" BorderThickness="1"
+                      CornerRadius="3" Padding="8,5" Margin="0,8,0,0">
+                <TextBlock x:Name="DynFlagText" Text="EFLAGS —" Foreground="#F59E0B"
+                           FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"/>
+              </Border>
+            </Grid>
+          </Grid>
+        </Grid>
       </Grid>
 
       <Grid Grid.Row="4" Margin="20,0">
